@@ -55,7 +55,7 @@ jobs:
 
           RELEASE_TAG="v${TARGET_TAG}"
           RELEASE_EXISTS=false
-          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+          if gh release view "${RELEASE_TAG}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             RELEASE_EXISTS=true
             echo "Release ${RELEASE_TAG} already exists on GitHub."
           else
@@ -216,6 +216,7 @@ jobs:
           fi
 
           gh release create "${RELEASE_TAG}" \
+            --repo "${{ github.repository }}" \
             $CLOBBER_FLAG \
             --title "Proton Pass v${TARGET_TAG} (Custom Build)" \
             --notes-file release_notes.md \
