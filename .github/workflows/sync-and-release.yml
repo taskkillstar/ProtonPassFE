@@ -142,9 +142,15 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Optimize build properties for CI
+        run: |
+          # Use R8 compatibility mode instead of fullMode to drastically reduce memory usage and speed up build
+          sed -i 's/android.enableR8.fullMode=true/android.enableR8.fullMode=false/' gradle.properties
+          # Increase daemon heap to 7GB backed by runner swap, matching F-Droid recipe
+          sed -i 's/-Xmx5g/-Xmx7g -XX:+UseParallelGC -XX:MaxMetaspaceSize=2g/' gradle.properties
+          cat gradle.properties
+
       - name: Build F-Droid Prod Release APK
-        env:
-          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xms2048m -Xmx6144m -XX:MaxMetaspaceSize=1024m -XX:+UseG1GC"
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleFdroidProdRelease \
