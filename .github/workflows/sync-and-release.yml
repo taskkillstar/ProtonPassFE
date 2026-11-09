@@ -1,0 +1,239 @@
+name: Sync Upstream & Release Modified App
+
+on:
+  schedule:
+    # Run every 6 hours to check for new upstream releases
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      target_tag:
+        description: 'Upstream tag to build (e.g. 1.41.5). Leave blank to auto-detect latest.'
+        required: false
+        default: ''
+      force_build:
+        description: 'Force rebuild and re-release even if already released'
+        type: boolean
+        default: false
+
+concurrency:
+  group: sync-and-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  check-upstream:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+      target_tag: ${{ steps.check.outputs.target_tag }}
+      release_exists: ${{ steps.check.outputs.release_exists }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check upstream tags vs existing releases
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git remote add upstream https://github.com/protonpass/android-pass.git || true
+          git fetch upstream --tags
+
+          if [ -n "${{ inputs.target_tag }}" ]; then
+            TARGET_TAG="${{ inputs.target_tag }}"
+          else
+            TARGET_TAG=$(git tag --list --sort=-version:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)
+          fi
+
+          echo "Target tag identified: ${TARGET_TAG}"
+          echo "target_tag=${TARGET_TAG}" >> "$GITHUB_OUTPUT"
+
+          RELEASE_TAG="v${TARGET_TAG}"
+          RELEASE_EXISTS=false
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            RELEASE_EXISTS=true
+            echo "Release ${RELEASE_TAG} already exists on GitHub."
+          else
+            echo "Release ${RELEASE_TAG} does not exist yet on GitHub."
+          fi
+          echo "release_exists=${RELEASE_EXISTS}" >> "$GITHUB_OUTPUT"
+
+          if [ "$RELEASE_EXISTS" = "false" ] || [ "${{ inputs.force_build }}" = "true" ]; then
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            echo "Proceeding with build for ${RELEASE_TAG}."
+          else
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+            echo "Release ${RELEASE_TAG} is already up-to-date. Skipping build."
+          fi
+
+  build-and-release:
+    needs: check-upstream
+    if: needs.check-upstream.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Backup custom patches and scripts
+        run: |
+          mkdir -p /tmp/custom_build_files
+          if [ -d "patches" ]; then
+            cp -r patches /tmp/custom_build_files/
+          fi
+          if [ -d "scripts" ]; then
+            cp -r scripts /tmp/custom_build_files/
+          fi
+
+      - name: Checkout upstream release tag
+        run: |
+          TARGET_TAG="${{ needs.check-upstream.outputs.target_tag }}"
+          echo "Checking out upstream tag ${TARGET_TAG}..."
+          git remote add upstream https://github.com/protonpass/android-pass.git || true
+          git fetch upstream --tags
+          git checkout "tags/${TARGET_TAG}" -B "build-${TARGET_TAG}"
+
+      - name: Restore custom modifications and scripts
+        run: |
+          if [ -d "/tmp/custom_build_files/patches" ]; then
+            mkdir -p patches
+            cp -r /tmp/custom_build_files/patches/* patches/ 2>/dev/null || true
+          fi
+          if [ -d "/tmp/custom_build_files/scripts" ]; then
+            mkdir -p scripts
+            cp -r /tmp/custom_build_files/scripts/* scripts/ 2>/dev/null || true
+          fi
+          chmod +x scripts/*.sh 2>/dev/null || true
+
+      - name: Apply custom modifications
+        run: |
+          if [ -f "scripts/apply-modifications.sh" ]; then
+            bash scripts/apply-modifications.sh
+          fi
+
+      - name: Update metadata version files if needed
+        run: |
+          TARGET_TAG="${{ needs.check-upstream.outputs.target_tag }}"
+          if [ -f "scripts/generateFdroidVersionFile.sh" ]; then
+            bash scripts/generateFdroidVersionFile.sh "${TARGET_TAG}" || true
+          fi
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build F-Droid Prod Release APK
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:+UseG1GC"
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleFdroidProdRelease -PdisableSentryUpload=true -PapkBuild=true --no-daemon --stacktrace
+
+      - name: Prepare Release Artifacts
+        id: artifacts
+        run: |
+          TARGET_TAG="${{ needs.check-upstream.outputs.target_tag }}"
+          APK_FILE=$(find app/build/outputs/apk/fdroidProd/release -type f -name "*.apk" | head -n 1)
+          if [ -z "$APK_FILE" ]; then
+            echo "::error::Could not find generated APK in app/build/outputs/apk/fdroidProd/release/"
+            exit 1
+          fi
+
+          FINAL_APK_NAME="ProtonPass-${TARGET_TAG}-custom.apk"
+          cp "$APK_FILE" "$FINAL_APK_NAME"
+          sha256sum "$FINAL_APK_NAME" > SHA256SUMS.txt
+
+          echo "apk_name=$FINAL_APK_NAME" >> "$GITHUB_OUTPUT"
+          echo "apk_path=$(pwd)/$FINAL_APK_NAME" >> "$GITHUB_OUTPUT"
+
+          # Prepare Release Notes
+          cat <<EOF > release_notes.md
+          ## Proton Pass v${TARGET_TAG} (Custom Build)
+
+          Automated build synced with upstream release tag [${TARGET_TAG}](https://github.com/protonpass/android-pass/releases/tag/${TARGET_TAG}).
+
+          ### Build Information
+          - **Flavor**: F-Droid Production Release (\`fdroidProdRelease\`)
+          - **Trackers/Telemetry**: Disabled (\`-PdisableSentryUpload=true\`)
+          - **Binary**: \`${FINAL_APK_NAME}\`
+          - **SHA256**: \`$(awk '{print $1}' SHA256SUMS.txt)\`
+
+          ### Applied Modifications
+          $(if ls patches/*.patch >/dev/null 2>&1 || ls patches/*.diff >/dev/null 2>&1; then
+              for p in patches/*.patch patches/*.diff; do
+                  [ -e "$p" ] && echo "- \`$(basename "$p")\`"
+              done
+            else
+              echo "- Base upstream with custom automation pipeline."
+            fi)
+
+          ---
+          *Built automatically by GitHub Actions.*
+          EOF
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TARGET_TAG="${{ needs.check-upstream.outputs.target_tag }}"
+          RELEASE_TAG="v${TARGET_TAG}"
+          FINAL_APK="${{ steps.artifacts.outputs.apk_name }}"
+
+          CLOBBER_FLAG=""
+          if [ "${{ needs.check-upstream.outputs.release_exists }}" = "true" ]; then
+            CLOBBER_FLAG="--clobber"
+          fi
+
+          gh release create "${RELEASE_TAG}" \
+            $CLOBBER_FLAG \
+            --title "Proton Pass v${TARGET_TAG} (Custom Build)" \
+            --notes-file release_notes.md \
+            "${FINAL_APK}" \
+            SHA256SUMS.txt
+
+      - name: Send Notification (Optional Integrations)
+        if: always()
+        env:
+          TARGET_TAG: ${{ needs.check-upstream.outputs.target_tag }}
+          JOB_STATUS: ${{ job.status }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          if [ "$JOB_STATUS" = "success" ]; then
+            MSG="✅ *Proton Pass v${TARGET_TAG} (Custom Build)* is ready!\n\nRelease: ${REPO_URL}/releases/tag/v${TARGET_TAG}"
+          else
+            MSG="❌ *Proton Pass v${TARGET_TAG} Build Failed!*\n\nCheck logs: ${REPO_URL}/actions/runs/${{ github.run_id }}"
+          fi
+
+          # Telegram (if configured)
+          if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+            curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+              -d "chat_id=${TELEGRAM_CHAT_ID}" \
+              -d "parse_mode=Markdown" \
+              -d "text=${MSG}" >/dev/null || true
+          fi
+
+          # Discord (if configured)
+          if [ -n "$DISCORD_WEBHOOK" ]; then
+            curl -s -H "Content-Type: application/json" -X POST "$DISCORD_WEBHOOK" \
+              -d "{\"content\": \"${MSG}\"}" >/dev/null || true
+          fi
+
+          # Ntfy (if configured)
+          if [ -n "$NTFY_TOPIC" ]; then
+            curl -s -d "${MSG}" "https://ntfy.sh/${NTFY_TOPIC}" >/dev/null || true
+          fi
