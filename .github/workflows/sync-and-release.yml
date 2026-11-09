@@ -146,8 +146,8 @@ jobs:
         run: |
           # Use R8 compatibility mode instead of fullMode to drastically reduce memory usage and speed up build
           sed -i 's/android.enableR8.fullMode=true/android.enableR8.fullMode=false/' gradle.properties
-          # Increase daemon heap to 7GB backed by runner swap, matching F-Droid recipe
-          sed -i 's/-Xmx5g/-Xmx7g -XX:+UseParallelGC -XX:MaxMetaspaceSize=2g/' gradle.properties
+          # Allocate 6GB heap with G1GC (clean line replacement, no conflicting GC flags)
+          sed -i 's/^org\.gradle\.jvmargs=.*/org.gradle.jvmargs=-Xms1g -Xmx6g -XX:+UseG1GC -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8/' gradle.properties
           cat gradle.properties
 
       - name: Build F-Droid Prod Release APK
