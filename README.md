@@ -1,3 +1,13 @@
+# ProtonPassFE
+
+Custom automated build and release pipeline for the Proton Pass Android application.
+Automatically syncs with upstream releases, applies custom patches, and builds production APKs.
+
+- **Releases & APK Downloads**: [github.com/taskkillstar/ProtonPassFE/releases](https://github.com/taskkillstar/ProtonPassFE/releases)
+- **Automation Documentation**: See [AUTOMATION_GUIDE.md](AUTOMATION_GUIDE.md)
+
+---
+
 # Proton Pass
 
 This repository contains the source code for the Proton Pass Android application.

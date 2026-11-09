@@ -1,4 +1,4 @@
-# Proton Pass Automated Custom Build & Release Pipeline
+# ProtonPassFE: Automated Custom Build & Release Pipeline
 
 This fork of [protonpass/android-pass](https://github.com/protonpass/android-pass) is configured to automatically:
 1. **Detect Upstream Releases**: Regularly checks for new release tags published by Proton.
@@ -70,7 +70,7 @@ It will be executed automatically by `scripts/apply-modifications.sh`.
 
 You don't have to wait for the weekly cron schedule. You can trigger a build at any time:
 
-1. Open your repository on GitHub: [github.com/taskkillstar/android-pass](https://github.com/taskkillstar/android-pass)
+1. Open your repository on GitHub: [github.com/taskkillstar/ProtonPassFE](https://github.com/taskkillstar/ProtonPassFE)
 2. Go to **Actions** tab.
 3. Click on **Sync Upstream & Release Modified App** in the left sidebar.
 4. Click **Run workflow**:
@@ -80,7 +80,7 @@ You don't have to wait for the weekly cron schedule. You can trigger a build at 
 
 Alternatively, using the GitHub CLI:
 ```bash
-gh workflow run sync-and-release.yml -f force_build=true
+gh workflow run sync-and-release.yml --repo taskkillstar/ProtonPassFE -f force_build=true
 ```
 
 ---

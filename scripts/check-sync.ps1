@@ -8,8 +8,8 @@ $latestUpstreamTag = ($tags | Where-Object { $_ -match '^\d+\.\d+\.\d+$' } | Sel
 Write-Host "Latest upstream release tag: $latestUpstreamTag" -ForegroundColor Green
 
 if (Get-Command gh -ErrorAction SilentlyContinue) {
-    Write-Host "Checking GitHub Releases in current repository..." -ForegroundColor Cyan
-    gh release view "v$latestUpstreamTag" 2>$null
+    Write-Host "Checking GitHub Releases in taskkillstar/ProtonPassFE..." -ForegroundColor Cyan
+    gh release view "v$latestUpstreamTag" --repo taskkillstar/ProtonPassFE 2>$null
     if ($LASTEXITCODE -eq 0) {
         Write-Host "Status: [UP TO DATE] Release v$latestUpstreamTag already exists." -ForegroundColor Green
     } else {

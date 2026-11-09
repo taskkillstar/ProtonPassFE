@@ -9,8 +9,8 @@ LATEST_UPSTREAM_TAG=$(git tag --list --sort=-version:refname | grep -E '^[0-9]+\
 echo "Latest upstream release tag: ${LATEST_UPSTREAM_TAG}"
 
 if command -v gh &>/dev/null; then
-    echo "Checking GitHub Releases in current repository..."
-    if gh release view "v${LATEST_UPSTREAM_TAG}" >/dev/null 2>&1; then
+    echo "Checking GitHub Releases in taskkillstar/ProtonPassFE..."
+    if gh release view "v${LATEST_UPSTREAM_TAG}" --repo taskkillstar/ProtonPassFE >/dev/null 2>&1; then
         echo "Status: [UP TO DATE] Release v${LATEST_UPSTREAM_TAG} already exists."
     else
         echo "Status: [NEW RELEASE AVAILABLE] v${LATEST_UPSTREAM_TAG} is not released yet!"
