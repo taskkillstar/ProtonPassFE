@@ -16,7 +16,7 @@ Upstream (protonpass/android-pass)
           │
           │ [Git Tag Published: e.g. 1.41.5]
           ▼
-GitHub Actions Cron Job / Manual Dispatch (every 6 hours)
+GitHub Actions Cron Job / Manual Dispatch (weekly)
           │
           ├─► Compare upstream tag vs your GitHub Releases
           │   └─ Already released? ──► Stop (No duplicate builds)
@@ -68,7 +68,7 @@ It will be executed automatically by `scripts/apply-modifications.sh`.
 
 ## How to Trigger a Build Manually
 
-You don't have to wait for the 6-hour cron schedule. You can trigger a build at any time:
+You don't have to wait for the weekly cron schedule. You can trigger a build at any time:
 
 1. Open your repository on GitHub: [github.com/taskkillstar/android-pass](https://github.com/taskkillstar/android-pass)
 2. Go to **Actions** tab.
